@@ -1,0 +1,118 @@
+name: Build ALISER APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Extract source ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f "ALISER-Browser-source.zip" ]; then
+            echo "ERROR: ALISER-Browser-source.zip is missing from repository root."
+            exit 1
+          fi
+          mkdir -p source
+          unzip -oq ALISER-Browser-source.zip -d source
+          echo "ZIP extracted successfully"
+
+      - name: Locate Android project
+        id: project
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETTINGS="$(find source -type f -name settings.gradle.kts -print -quit)"
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle.kts not found in source ZIP"
+            find source -maxdepth 5 -type f -print
+            exit 1
+          fi
+          PROJECT_DIR="$(dirname "$SETTINGS")"
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle.kts not found in $PROJECT_DIR"
+            find "$PROJECT_DIR" -maxdepth 5 -type f -print
+            exit 1
+          fi
+          echo "Project directory: $PROJECT_DIR"
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configure Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found at $SDKMANAGER"
+            find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name sdkmanager -type f
+            exit 1
+          fi
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Print build environment
+        run: |
+          java -version
+          gradle --version
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list_installed
+
+      - name: Build ALISER Debug APK
+        shell: bash
+        env:
+          PROJECT_DIR: \${{ steps.project.outputs.dir }}
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace --info \
+            -p "$PROJECT_DIR" :app:assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        env:
+          PROJECT_DIR: \${{ steps.project.outputs.dir }}
+        run: |
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -s "$APK" ]; then
+            echo "ERROR: APK was not generated or is empty."
+            exit 1
+          fi
+          echo "APK successfully generated:"
+          ls -lh "$APK"
+
+      - name: Upload ALISER APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALISER-Browser-APK
+          path: \${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+          
