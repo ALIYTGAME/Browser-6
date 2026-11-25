@@ -1,166 +1,74 @@
-name: Build ALISER APK
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-permissions:
-  contents: read
+name: Build APK
+on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
     env:
       P: ${{ github.workspace }}/app-project
     steps:
-      - name: Create project
-        shell: bash
+      - name: Project
         run: |
-          set -euo pipefail
-          D=$P/app/src/main; mkdir -p $D/java/com/aliser/browser; cd $P
-          VER=$(curl -fsSL --retry 3 https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview-omni/maven-metadata.xml | grep -oP '<release>\K[^<]+' | head -1)
-          echo "GeckoView $VER"
-          cat > settings.gradle.kts <<'X'
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-          dependencyResolutionManagement {
-              repositories { google(); mavenCentral(); maven { url = uri("https://maven.mozilla.org/maven2/") } }
-          }
-          include(":app")
-          X
-          cat > build.gradle.kts <<'X'
-          plugins {
-              id("com.android.application") version "8.10.1" apply false
-              id("org.jetbrains.kotlin.android") version "2.1.20" apply false
-          }
-          X
-          echo "android.useAndroidX=true" > gradle.properties
-          echo "org.gradle.jvmargs=-Xmx3g" >> gradle.properties
-          cat > app/build.gradle.kts <<X
-          plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
-          android {
-              namespace = "com.aliser.browser"
-              compileSdk = 36
-              defaultConfig { applicationId = "com.aliser.browser"; minSdk = 26; targetSdk = 36; versionCode = 1; versionName = "0.1" }
-              compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-              kotlinOptions { jvmTarget = "17" }
-          }
-          dependencies { implementation("org.mozilla.geckoview:geckoview-omni:$VER") }
-          X
-          cat > $D/AndroidManifest.xml <<'X'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <application android:label="ALISER Browser" android:allowBackup="false"
-                  android:theme="@android:style/Theme.Material.NoActionBar">
-                  <activity android:name=".MainActivity" android:exported="true"
-                      android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
-                      android:windowSoftInputMode="adjustResize">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          X
-          cat > $D/java/com/aliser/browser/MainActivity.kt <<'X'
-          package com.aliser.browser
-
+          set -e
+          D=$P/app/src/main; mkdir -p $D/java/a; cd $P
+          V=$(curl -fsSL https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview-omni/maven-metadata.xml | grep -oP '<release>\K[^<]+' | head -1)
+          echo 'pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}
+          dependencyResolutionManagement{repositories{google();mavenCentral();maven{url=uri("https://maven.mozilla.org/maven2/")}}}
+          include(":app")' > settings.gradle.kts
+          echo android.useAndroidX=true > gradle.properties
+          echo "plugins{id(\"com.android.application\") version \"8.10.1\";id(\"org.jetbrains.kotlin.android\") version \"2.1.20\"}
+          android{namespace=\"a\";compileSdk=36
+          defaultConfig{applicationId=\"a.browser\";minSdk=26;targetSdk=36}
+          compileOptions{sourceCompatibility=JavaVersion.VERSION_17;targetCompatibility=JavaVersion.VERSION_17}
+          kotlinOptions{jvmTarget=\"17\"}}
+          dependencies{implementation(\"org.mozilla.geckoview:geckoview-omni:$V\")}" > app/build.gradle.kts
+          echo '<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.INTERNET"/>
+          <application android:label="ALISER" android:theme="@android:style/Theme.Material.NoActionBar">
+          <activity android:name="a.M" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode">
+          <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+          </activity></application></manifest>' > $D/AndroidManifest.xml
+          cat > $D/java/a/M.kt <<'X'
+          package a
           import android.app.Activity
-          import android.graphics.Color
-          import android.net.Uri
           import android.os.Bundle
-          import android.text.InputType
           import android.view.inputmethod.EditorInfo
-          import android.widget.Button
           import android.widget.EditText
           import android.widget.LinearLayout
           import org.mozilla.geckoview.*
-
-          class MainActivity : Activity() {
-              companion object { var runtime: GeckoRuntime? = null }
-              private lateinit var session: GeckoSession
-              private var canGoBack = false
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  val rt = runtime ?: GeckoRuntime.create(
-                      applicationContext,
-                      GeckoRuntimeSettings.Builder().contentBlocking(
-                          ContentBlocking.Settings.Builder()
-                              .antiTracking(ContentBlocking.AntiTracking.DEFAULT or ContentBlocking.AntiTracking.STP)
-                              .build()
-                      ).build()
-                  ).also { runtime = it }
-
-                  val bar = EditText(this).apply {
-                      setSingleLine(); hint = "Search or enter address"
-                      setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
-                      imeOptions = EditorInfo.IME_ACTION_GO
-                      inputType = InputType.TYPE_TEXT_VARIATION_URI
+          class M : Activity() {
+              companion object { var rt: GeckoRuntime? = null }
+              lateinit var s: GeckoSession
+              var back = false
+              override fun onCreate(b: Bundle?) {
+                  super.onCreate(b)
+                  val r = rt ?: GeckoRuntime.create(applicationContext).also { rt = it }
+                  val bar = EditText(this)
+                  bar.setSingleLine(); bar.imeOptions = EditorInfo.IME_ACTION_GO
+                  s = GeckoSession()
+                  s.navigationDelegate = object : GeckoSession.NavigationDelegate {
+                      override fun onCanGoBack(x: GeckoSession, c: Boolean) { back = c }
                   }
-                  val view = GeckoView(this)
-                  session = GeckoSession().apply {
-                      progressDelegate = object : GeckoSession.ProgressDelegate {
-                          override fun onPageStart(s: GeckoSession, url: String) { runOnUiThread { bar.setText(url) } }
-                      }
-                      navigationDelegate = object : GeckoSession.NavigationDelegate {
-                          override fun onCanGoBack(s: GeckoSession, b: Boolean) { canGoBack = b }
-                      }
-                      open(rt)
+                  s.open(r)
+                  val v = GeckoView(this); v.setSession(s)
+                  bar.setOnEditorActionListener { _, _, _ ->
+                      val t = bar.text.toString().trim()
+                      s.loadUri(if (t.contains(".") && !t.contains(" ")) (if (t.startsWith("http")) t else "https://$t") else "https://duckduckgo.com/?q=" + android.net.Uri.encode(t))
+                      true
                   }
-                  view.setSession(session)
-
-                  fun go(raw: String) {
-                      val q = raw.trim()
-                      if (q.isEmpty()) return
-                      session.loadUri(when {
-                          q.startsWith("http://") || q.startsWith("https://") -> q
-                          q.contains(" ") || !q.contains(".") -> "https://duckduckgo.com/?q=" + Uri.encode(q)
-                          else -> "https://$q"
-                      })
-                  }
-                  bar.setOnEditorActionListener { _, _, _ -> go(bar.text.toString()); true }
-
-                  fun btn(t: String, f: () -> Unit) = Button(this).apply { text = t; setOnClickListener { f() } }
-                  val top = LinearLayout(this).apply {
-                      orientation = LinearLayout.HORIZONTAL
-                      addView(bar, LinearLayout.LayoutParams(0, -2, 1f))
-                      addView(btn("GO") { go(bar.text.toString()) })
-                      addView(btn("↻") { session.reload() })
-                      addView(btn("⌂") { go("https://duckduckgo.com") })
-                  }
-                  setContentView(LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setBackgroundColor(Color.parseColor("#0B1010"))
-                      fitsSystemWindows = true
-                      addView(top)
-                      addView(view, LinearLayout.LayoutParams(-1, 0, 1f))
-                  })
-                  session.loadUri("https://duckduckgo.com")
+                  val l = LinearLayout(this); l.orientation = LinearLayout.VERTICAL; l.fitsSystemWindows = true
+                  l.addView(bar); l.addView(v, LinearLayout.LayoutParams(-1, 0, 1f))
+                  setContentView(l)
+                  s.loadUri("https://duckduckgo.com")
               }
-
-              @Deprecated("Deprecated in Java")
-              override fun onBackPressed() { if (canGoBack) session.goBack() else super.onBackPressed() }
-
-              override fun onDestroy() { session.close(); super.onDestroy() }
+              @Deprecated("x") override fun onBackPressed() { if (back) s.goBack() else super.onBackPressed() }
           }
           X
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - name: Android SDK 36
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        with: { distribution: temurin, java-version: 17 }
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
-      - name: Build
-        run: gradle --no-daemon --stacktrace -p "$P" :app:assembleDebug
-      - name: Verify APK
-        run: test -s "$P/app/build/outputs/apk/debug/app-debug.apk" && ls -lh "$P/app/build/outputs/apk/debug/app-debug.apk"
+        with: { gradle-version: 8.11.1 }
+      - run: gradle --no-daemon -p $P :app:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: ALISER-Browser-APK
-          path: ${{ github.workspace }}/app-project/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          name: APK
+          path: app-project/app/build/outputs/apk/debug/app-debug.apk
